@@ -1,0 +1,14 @@
+{
+  "name": "globfmt",
+  "version": "0.1.0",
+  "description": "Convert glob pattern lists between gitignore-style files and JSON arrays.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "globfmt": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc"
+  }
+}
