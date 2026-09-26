@@ -75,6 +75,13 @@ Write the converted output straight to a file instead of stdout with `--out`:
 $ globfmt .gitignore --to json --out patterns.json
 ```
 
+The input file can also be piped in on stdin - omit it or pass `-`. Since
+there's no filename to infer a format from, `--from` is required in that case:
+
+```
+$ cat .gitignore | globfmt --from ignore --to json
+```
+
 ## Building
 
 No dependencies to install - clone it and run:

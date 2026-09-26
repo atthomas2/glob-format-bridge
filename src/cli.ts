@@ -3,7 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { parse, render, summarize, detectFormat, otherFormat, Format } from "./index.js"
 
 interface Args {
-  file: string
+  // null means "read from stdin" - either no positional was given, or it was "-"
+  file: string | null
   from?: Format
   to?: Format
   out?: string
@@ -39,11 +40,12 @@ function parseArgs(argv: string[]): Args {
     }
   }
 
-  if (positionals.length !== 1) {
-    throw new Error("expected exactly one input file argument")
+  if (positionals.length > 1) {
+    throw new Error("expected at most one input file argument")
   }
 
-  return { file: positionals[0], from, to, out, json }
+  const file = positionals.length === 0 || positionals[0] === "-" ? null : positionals[0]
+  return { file, from, to, out, json }
 }
 
 function requireFormat(value: string | undefined, flag: string): Format {
@@ -55,9 +57,11 @@ function requireFormat(value: string | undefined, flag: string): Format {
 
 function usage(): string {
   return [
-    "usage: globfmt <file> [--from ignore|json] [--to ignore|json] [--out <path>] [--json]",
+    "usage: globfmt [file] [--from ignore|json] [--to ignore|json] [--out <path>] [--json]",
     "",
+    "  file     input file to convert; omit or pass \"-\" to read from stdin",
     "  --from   input format, inferred from the file extension when omitted",
+    "           (required when reading from stdin, since there's no extension)",
     "  --to     output format, defaults to the other format when omitted",
     "  --out    write the result to a file instead of stdout",
     "  --json   emit a JSON report (stats, warnings, output) instead of plain text",
@@ -73,14 +77,20 @@ function main(): void {
     process.exit(1)
   }
 
-  const from = args.from ?? detectFormat(args.file)
+  if (args.file === null && args.from === undefined) {
+    process.stderr.write(`error: --from is required when reading from stdin\n\n${usage()}\n`)
+    process.exit(1)
+  }
+
+  const from = args.from ?? detectFormat(args.file as string)
   const to = args.to ?? otherFormat(from)
+  const source = args.file ?? "(stdin)"
 
   let content: string
   try {
-    content = readFileSync(args.file, "utf8")
+    content = args.file === null ? readFileSync(0, "utf8") : readFileSync(args.file, "utf8")
   } catch (err) {
-    process.stderr.write(`error: could not read ${args.file}: ${(err as Error).message}\n`)
+    process.stderr.write(`error: could not read ${source}: ${(err as Error).message}\n`)
     process.exit(1)
   }
 
@@ -88,7 +98,7 @@ function main(): void {
   try {
     result = parse(content, from)
   } catch (err) {
-    process.stderr.write(`error: could not parse ${args.file} as ${from}: ${(err as Error).message}\n`)
+    process.stderr.write(`error: could not parse ${source} as ${from}: ${(err as Error).message}\n`)
     process.exit(1)
   }
 
@@ -104,7 +114,7 @@ function main(): void {
       JSON.stringify(
         {
           ok: true,
-          file: args.file,
+          file: source,
           from,
           to,
           out: args.out ?? null,
