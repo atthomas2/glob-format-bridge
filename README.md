@@ -82,6 +82,13 @@ there's no filename to infer a format from, `--from` is required in that case:
 $ cat .gitignore | globfmt --from ignore --to json
 ```
 
+Escapes follow gitignore rules. Trailing spaces are dropped from a line
+unless the last one is backslash-escaped (`build\ ` keeps its space). A
+leading `\#` or `\!` is a literal `#` or `!`; in JSON the pattern is stored
+without the backslash (`{ "pattern": "#notes" }`) and the backslash is added
+back when writing an ignore file. Other escapes, such as `\[` in a bracket
+pattern, are glob syntax and are passed through untouched.
+
 ## Building
 
 No dependencies to install - clone it and run:

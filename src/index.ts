@@ -28,15 +28,47 @@ export interface ParseResult {
   warnings: ParseWarning[]
 }
 
+// Number of consecutive backslashes immediately before position `end`.
+function backslashesBefore(text: string, end: number): number {
+  let count = 0
+  while (end - count > 0 && text[end - count - 1] === "\\") count += 1
+  return count
+}
+
+// git drops trailing spaces from a line unless the last one is escaped with
+// a backslash ("foo\ " keeps its space). An even number of backslashes before
+// the space means they escape each other and the space is not protected.
+function trimTrailingSpaces(line: string): string {
+  let end = line.length
+  while (end > 0 && line[end - 1] === " ") {
+    if (backslashesBefore(line, end - 1) % 2 === 1) break
+    end -= 1
+  }
+  return line.slice(0, end)
+}
+
+// Inverse of trimTrailingSpaces for output: protect trailing spaces that
+// came from a JSON pattern so the ignore file doesn't silently lose them.
+function escapeTrailingSpaces(pattern: string): string {
+  const match = /( +)$/.exec(pattern)
+  if (!match) return pattern
+  const runStart = pattern.length - match[1].length
+  const alreadyEscaped = backslashesBefore(pattern, runStart) % 2 === 1
+  const firstPlain = alreadyEscaped ? 1 : 0
+  return (
+    pattern.slice(0, runStart) +
+    (alreadyEscaped ? " " : "") +
+    "\\ ".repeat(match[1].length - firstPlain)
+  )
+}
+
 export function parseIgnore(content: string): ParseResult {
   const entries: GlobEntry[] = []
   const warnings: ParseWarning[] = []
   const lines = content.split(/\r?\n/)
 
   lines.forEach((rawLine, index) => {
-    // gitignore trims trailing whitespace unless it's backslash-escaped;
-    // that edge case is rare enough to leave for later.
-    const line = rawLine.replace(/\s+$/, "")
+    const line = trimTrailingSpaces(rawLine)
     if (line.trim() === "") return
 
     if (line.startsWith("#")) {
@@ -49,8 +81,9 @@ export function parseIgnore(content: string): ParseResult {
     if (pattern.startsWith("!")) {
       negate = true
       pattern = pattern.slice(1)
-    }
-    if (pattern.startsWith("\\#") || pattern.startsWith("\\!")) {
+    } else if (pattern.startsWith("\\#") || pattern.startsWith("\\!")) {
+      // Only meaningful at the start of the line. The unescaped form is what
+      // the JSON side should see; formatIgnore puts the backslash back.
       pattern = pattern.slice(1)
     }
     if (pattern === "") {
@@ -96,9 +129,16 @@ export function parseJsonList(content: string): ParseResult {
 }
 
 export function formatIgnore(entries: GlobEntry[]): string {
-  const lines = entries.map((entry) =>
-    entry.kind === "comment" ? `# ${entry.text}` : `${entry.negate ? "!" : ""}${entry.pattern}`
-  )
+  const lines = entries.map((entry) => {
+    if (entry.kind === "comment") return `# ${entry.text}`
+    let pattern = escapeTrailingSpaces(entry.pattern)
+    // A leading # or ! would otherwise read back as a comment or negation.
+    // After a "!" prefix neither is special, so leave those alone.
+    if (!entry.negate && (pattern.startsWith("#") || pattern.startsWith("!"))) {
+      pattern = "\\" + pattern
+    }
+    return `${entry.negate ? "!" : ""}${pattern}`
+  })
   return lines.join("\n") + "\n"
 }
 
